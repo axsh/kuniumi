@@ -29,7 +29,12 @@ To use Kuniumi, create an instance of `App`, register your functions, and then c
 			Name:    "my-app",
 			Version: "1.0.0",
 		})
-		app.RegisterFunc(Hello, "Returns a greeting")
+		app.RegisterFunc(Hello, "Returns a greeting",
+			kuniumi.WithParams(
+				kuniumi.Param("name", "Name to greet"),
+			),
+			kuniumi.WithReturns("Greeting message"),
+		)
 		app.Run()
 	}
 

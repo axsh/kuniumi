@@ -28,12 +28,19 @@ package main
 
 import (
     "context"
+    "fmt"
     "github.com/axsh/kuniumi"
 )
 
 // Function to expose
 // context.Context is required to access the VirtualEnvironment
 func Add(ctx context.Context, x int, y int) (int, error) {
+    // Example: Accessing Virtual Environment
+    env := kuniumi.GetVirtualEnv(ctx)
+    if env.Getenv("DEBUG") == "true" {
+        fmt.Println("Debug mode enabled")
+    }
+
     return x + y, nil
 }
 
@@ -43,8 +50,14 @@ func main() {
         Version: "1.0.0",
     })
 
-    // Register function with argument names
-    app.RegisterFunc(Add, "Add two integers", kuniumi.WithArgs("x", "y"))
+    // Register function with parameters and return value description
+    app.RegisterFunc(Add, "Add two integers",
+        kuniumi.WithParams(
+            kuniumi.Param("x", "First integer to add"),
+            kuniumi.Param("y", "Second integer to add"),
+        ),
+        kuniumi.WithReturns("Sum of x and y"),
+    )
 
     if err := app.Run(); err != nil {
         panic(err)

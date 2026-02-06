@@ -26,6 +26,7 @@ package main
 
 import (
     "context"
+    "fmt"
     "github.com/axsh/kuniumi"
 )
 
@@ -43,8 +44,14 @@ func main() {
     })
 
     // 関数の登録
-    // WithArgs で引数名を指定することで、JSON入力などのキーとして使用される
-    app.RegisterFunc(Add, "2つの整数を加算します", kuniumi.WithArgs("x", "y"))
+    // WithParams で引数名と説明を指定し、WithReturns で戻り値の説明を指定
+    app.RegisterFunc(Add, "2つの整数を加算します",
+        kuniumi.WithParams(
+            kuniumi.Param("x", "1つ目の整数"),
+            kuniumi.Param("y", "2つ目の整数"),
+        ),
+        kuniumi.WithReturns("加算結果"),
+    )
 
     // 実行（CLI引数に基づいて適切なアダプターが起動）
     if err := app.Run(); err != nil {
@@ -86,8 +93,9 @@ echo '{"x": 10, "y": 20}' | ./calculator cgi
 `app.RegisterFunc` を使用して関数を登録します。
 
 - **自動名前解決**: `runtime.FuncForPC` を使用して関数名（例: `Add`）を自動的に抽出します。
-- **引数名の指定**: Goのリフレクションでは引数名（変数名）を取得できないため、`kuniumi.WithArgs("arg1", "arg2")` オプションを使用して明示的に指定することを推奨します。指定しない場合、自動生成された名前が使用される可能性がありますが、APIの可読性が低下します。
-- **メタデータ**: 関数のシグネチャ（引数の型、戻り値）とDocstringがメタデータとして解析され、MCPのツール定義やOpenAPIスペックの生成に使用されます。
+- **メタデータの補完**: Goのリフレクションでは引数名や説明文を取得できないため、`kuniumi.WithParams` 等のオプションを使用して明示的に指定することを推奨します。
+    - `WithParams` を使用しない場合でも動作しますが、生成されるAPIドキュメント（OpenAPI, MCP Tools）の品質が低下します。
+- **メタデータ解析**: 関数のシグネチャ（引数の型、戻り値）とDocstringがメタデータとして解析され、MCPのツール定義やOpenAPIスペックの生成に使用されます。
 
 ### 3.3 仮想環境 (Virtual Environment)
 
@@ -128,7 +136,7 @@ func MyFunc(ctx context.Context) error {
 - **パスの正規化**: 仮想環境内では常に `/` 区切りのパスを使用します。
 - **サンドボックス**: マウントされていないパスへのアクセスはエラーになります。
 
-## 4. アダプター (Adapters)
+### 4. アダプター (Adapters)
 
 Kuniumiは以下の実行モード（サブコマンド）を標準でサポートしています。
 
@@ -139,20 +147,39 @@ Kuniumiは以下の実行モード（サブコマンド）を標準でサポー�
 | **`cgi`** | CGI実行 | サーバーレス環境 (AWS Lambda Custom Runtime等) や既存Webサーバー配下での実行 |
 | **`containerize`** | Dockerfile生成 | アプリケーションのコンテナ化支援 |
 
-### 4.1 MCP アダプター
+### 4.1 HTTP アダプター (`serve`)
+
+REST APIとして関数を公開します。
+
+- **Endpoint**: `POST /functions/{function_name}`
+    - Body: JSON Object (Arguments)
+    - Response: JSON Object (`{"result": ...}`)
+- **Metadata**: `GET /openapi.json`
+    - OpenAPI 3.0.0 形式で API 定義を返します。
+
+### 4.2 MCP アダプター (`mcp`)
 
 Model Context Protocol (MCP) に準拠したサーバーとして動作します。標準入出力 (Stdio) を使用してクライアントと通信します。
 
 - 登録された関数はMCPの「Tool」として公開されます。
 - 関数の引数はJSON Schemaとして定義され、LLMが理解可能な形式になります。
 
-### 4.2 CGI アダプター
+### 4.3 CGI アダプター (`cgi`)
 
 環境変数 (`PATH_INFO`) と標準入力 (JSON Body) を使用して、一度きりの関数実行を行います。
 
-- ルーティング: `PATH_INFO` (例: `/Add` や `/functions/Add`) に基づいて実行する関数を決定します。
-- 入力: 標準入力からJSONを受け取ります。
-- 出力: 標準出力にJSON形式のレスポンスとHTTPヘッダー風のメタデータを書き込みます。
+- **ルーティング**: `PATH_INFO` (例: `/Add` や `/functions/Add`) に基づいて実行する関数を決定します。
+- **入力**: 標準入力からJSONを受け取ります。
+- **出力**: 標準出力にJSON形式のレスポンスとHTTPヘッダー風のメタデータを書き込みます。
+
+### 4.4 Container アダプター (`containerize`)
+
+アプリケーションを Docker コンテナ化するための `Dockerfile` を生成、ビルド、プッシュします。
+
+- **Base Image**: `golang:1.24-alpine` (Builder), `alpine:latest` (Runtime)
+- **Commands**:
+    - `docker build`
+    - `docker push` (Optional)
 
 ## 5. API リファレンス (主な型と関数)
 
@@ -181,7 +208,7 @@ Model Context Protocol (MCP) に準拠したサーバーとして動作します
 - **引数**:
     - `fn`: 公開するGo関数。第一引数に `context.Context`、最後の戻り値に `error` を持つ必要があります。
     - `desc`: 関数の説明（Docstring）。LLMやOpenAPIのDescriptionとして使用されます。
-    - `opts`: 関数のその他のオプション（`WithArgs` など）。
+    - `opts`: 関数のその他のオプション（`WithParams` など）。
 - **例**:
     ```go
     app.RegisterFunc(MyFunc, "サンプルの関数です",
@@ -193,80 +220,67 @@ Model Context Protocol (MCP) に準拠したサーバーとして動作します
     )
     ```
 
-#### `func WithParams(params ...ParamDef) FuncOption`
+#### `RegisterFunc` Options
 
-関数の引数名と説明文を定義します。
-`kuniumi.Param(name, desc)` を使用して、引数の順序通りに定義を作成します。
+- **`kuniumi.WithParams(params ...ParamDef)`**
+    - 関数の引数名と説明を指定します。
+    - `kuniumi.Param(name, desc)` で定義を作成します。
+- **`kuniumi.WithReturns(desc string)`**
+    - 関数の戻り値の説明を指定します。
 
-- **引数**:
-    - `params`: `ParamDef` のリスト。
-- **例**:
-    ```go
-    kuniumi.WithParams(
-        kuniumi.Param("x", "X coordinate"),
-        kuniumi.Param("y", "Y coordinate"),
-    )
-    ```
+#### `type FunctionMetadata`
 
-#### `func WithReturns(desc string) FuncOption`
+```go
+type FunctionMetadata struct {
+    Name        string
+    Description string
+    Args        []ArgMetadata
+    Returns     []ArgMetadata // Currently usually size 1
+}
+```
 
-関数の戻り値に関する説明文を定義します。
+### `type VirtualEnvironment`
 
-#### `func WithArgs(names ...string) FuncOption`
+#### `type FileInfo`
 
-(非推奨: `WithParams` の使用を推奨)
-登録する関数の引数名を指定するためのオプションです。説明文は付与されません。
+```go
+type FileInfo struct {
+    Name  string
+    Size  int64
+    IsDir bool
+}
+```
 
-#### `func (a *App) Run() error`
+#### Methods
 
-アプリケーションを実行します。内部でCLI引数を解析し、適切なサブコマンド（`serve`, `mcp`, `cgi` 等）を起動します。
-通常、`main` 関数の最後に呼び出します。
-
-#### `type VirtualEnvironment`
-
-仮想環境（ファイルシステム、環境変数）へのアクセスを提供する構造体です。
-直接インスタンス化せず、`GetVirtualEnv` を通じて取得します。
-
-**主なメソッド**:
+`kuniumi.GetVirtualEnv(ctx)` で取得したインスタンスに対して呼び出します。
 
 - **`func (v *VirtualEnvironment) Getenv(key string) string`**
-    - 指定されたキーの環境変数を取得します。
-    - 仮想環境独自の変数を優先し、設定がない場合は空文字を返します（将来的にホスト環境変数へのフォールバック等を設定可能になる可能性があります）。
-
+    - 指定された環境変数の値を取得します。
+- **`func (v *VirtualEnvironment) ListEnv() map[string]string`**
+    - 全環境変数のコピーを取得します。
+- **`func (v *VirtualEnvironment) ReadFile(path string, offset int64, length int64) ([]byte, error)`**
+    - 仮想パス上のファイルを読み込みます。
 - **`func (v *VirtualEnvironment) WriteFile(path string, data []byte) error`**
-    - 仮想パス `path` にファイルを作成（上書き）します。
-    - ホスト上のマウントされたパスに解決されて書き込まれます。
-
-- **`func (v *VirtualEnvironment) ReadFile(path string, offset, length int64) ([]byte, error)`**
-    - 仮想パス `path` からデータを読み込みます。
-    - `offset` と `length` を指定して部分読み込みが可能です。`length` が0以上の場合はその長さだけ、ファイル全体の読み込みには標準的なラッパーが必要になる場合がありますが、現状は低レベルAPIとして提供されています。
-
+    - 仮想パス上のファイルにデータを書き込みます（上書き）。
+- **`func (v *VirtualEnvironment) RewriteFile(path string, offset int64, data []byte) error`**
+    - ファイルの特定の位置からデータを書き込みます（部分更新）。
+- **`func (v *VirtualEnvironment) CopyFile(src, dst string) error`**
+    - ファイルをコピーします。
+- **`func (v *VirtualEnvironment) RemoveFile(path string) error`**
+    - ファイルを削除します。
+- **`func (v *VirtualEnvironment) Chmod(path string, mode os.FileMode) error`**
+    - ファイルの権限を変更します。
 - **`func (v *VirtualEnvironment) ListFile(path string) ([]FileInfo, error)`**
     - 指定されたディレクトリ内のファイル一覧を取得します。
-
 - **`func (v *VirtualEnvironment) FindFile(root string, pattern string, recursive bool) ([]string, error)`**
-    - 指定されたパターン（Glob）に一致するファイルを検索します。
-
+    - 指定されたパターン（Glob, 例: `*.go`）に一致するファイルを検索します。
+    - `recursive` が `true` の場合、サブディレクトリも再帰的に検索します。
+    - 戻り値は仮想パスのリストです。
 - **`func (v *VirtualEnvironment) ChangeCurrentDirectory(path string) error`**
-    - 仮想環境内のカレントディレクトリを変更します。
-
+    - カレントディレクトリを変更します。
 - **`func (v *VirtualEnvironment) GetCurrentDirectory() string`**
-    - 現在のカレントディレクトリ（仮想パス）を取得します。
-
-- **`func (v *VirtualEnvironment) RewriteFile(path string, offset int64, data []byte) error`**
-    - 指定されたオフセットの位置からデータを上書きします。ファイルの他の部分は保持されます。
-
-- **`func (v *VirtualEnvironment) CopyFile(src, dst string) error`**
-    - 仮想パス `src` から `dst` へファイルをコピーします。
-
-- **`func (v *VirtualEnvironment) RemoveFile(path string) error`**
-    - 指定された仮想パスのファイルを削除します。
-
-- **`func (v *VirtualEnvironment) Chmod(path string, mode os.FileMode) error`**
-    - 指定された仮想パスのファイルのパーミッションを変更します。
-
-- **`func (v *VirtualEnvironment) ListEnv() map[string]string`**
-    - 現在の仮想環境変数の一覧（コピー）を取得します。
+    - カレントディレクトリを取得します。
 
 #### `func GetVirtualEnv(ctx context.Context) *VirtualEnvironment`
 
