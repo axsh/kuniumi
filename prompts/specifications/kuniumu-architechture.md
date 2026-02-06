@@ -250,6 +250,24 @@ Model Context Protocol (MCP) に準拠したサーバーとして動作します
 - **`func (v *VirtualEnvironment) ChangeCurrentDirectory(path string) error`**
     - 仮想環境内のカレントディレクトリを変更します。
 
+- **`func (v *VirtualEnvironment) GetCurrentDirectory() string`**
+    - 現在のカレントディレクトリ（仮想パス）を取得します。
+
+- **`func (v *VirtualEnvironment) RewriteFile(path string, offset int64, data []byte) error`**
+    - 指定されたオフセットの位置からデータを上書きします。ファイルの他の部分は保持されます。
+
+- **`func (v *VirtualEnvironment) CopyFile(src, dst string) error`**
+    - 仮想パス `src` から `dst` へファイルをコピーします。
+
+- **`func (v *VirtualEnvironment) RemoveFile(path string) error`**
+    - 指定された仮想パスのファイルを削除します。
+
+- **`func (v *VirtualEnvironment) Chmod(path string, mode os.FileMode) error`**
+    - 指定された仮想パスのファイルのパーミッションを変更します。
+
+- **`func (v *VirtualEnvironment) ListEnv() map[string]string`**
+    - 現在の仮想環境変数の一覧（コピー）を取得します。
+
 #### `func GetVirtualEnv(ctx context.Context) *VirtualEnvironment`
 
 `context.Context` から現在の `VirtualEnvironment` を取得します。
