@@ -80,6 +80,12 @@ go build -o calculator main.go
 # Run as CGI
 export PATH_INFO="/Add"
 echo '{"x": 10, "y": 20}' | ./calculator cgi
+
+# Get OpenAPI spec via CGI
+PATH_INFO="/openapi.json" REQUEST_METHOD=GET ./calculator cgi
+
+# Get OpenAPI spec via HTTP
+curl http://localhost:8080/openapi.json
 ```
 
 ## Documentation

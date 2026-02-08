@@ -21,6 +21,14 @@ func (a *App) buildCgiCmd() *cobra.Command {
 			pathInfo := os.Getenv("PATH_INFO")
 			pathInfo = strings.TrimPrefix(pathInfo, "/")
 
+			// OpenAPI spec request
+			if pathInfo == "openapi.json" {
+				fmt.Printf("Content-Type: application/json\r\nStatus: 200 OK\r\n\r\n")
+				spec := a.generateOpenAPISpec()
+				json.NewEncoder(os.Stdout).Encode(spec)
+				return nil
+			}
+
 			// Normalize: if pathInfo is "functions/Add", handle it.
 			// Or just "Add".
 			fnName := pathInfo

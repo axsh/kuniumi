@@ -77,41 +77,7 @@ func (a *App) createHttpHandler(fn *RegisteredFunc) http.HandlerFunc {
 }
 
 func (a *App) serveOpenAPI(w http.ResponseWriter, r *http.Request) {
-	// Generate simplified OpenAPI Spec
-	spec := map[string]any{
-		"openapi": "3.0.0",
-		"info": map[string]string{
-			"title":   a.config.Name,
-			"version": a.config.Version,
-		},
-		"paths": map[string]any{},
-	}
-
-	paths := spec["paths"].(map[string]any)
-
-	for _, fn := range a.functions {
-		path := fmt.Sprintf("/functions/%s", fn.Name)
-		schema := GenerateJSONSchema(fn.Meta)
-
-		paths[path] = map[string]any{
-			"post": map[string]any{
-				"description": fn.Description,
-				"requestBody": map[string]any{
-					"content": map[string]any{
-						"application/json": map[string]any{
-							"schema": schema,
-						},
-					},
-				},
-				"responses": map[string]any{
-					"200": map[string]any{
-						"description": "Successful execution",
-					},
-				},
-			},
-		}
-	}
-
+	spec := a.generateOpenAPISpec()
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(spec)
 }

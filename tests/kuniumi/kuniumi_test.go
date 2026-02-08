@@ -116,11 +116,34 @@ func TestKuniumiIntegration(t *testing.T) {
 		assert.Contains(t, output, `{"result":30}`)
 	})
 
+	// Case 2b: CGI OpenAPI
+	t.Run("CGI/OpenAPI", func(t *testing.T) {
+		cmd := exec.Command(binPath, "cgi")
+		cmd.Env = append(os.Environ(), "PATH_INFO=/openapi.json", "REQUEST_METHOD=GET")
+		cmd.Stdin = strings.NewReader("")
+
+		var out bytes.Buffer
+		cmd.Stdout = &out
+		cmd.Stderr = os.Stderr
+
+		require.NoError(t, cmd.Run())
+
+		output := out.String()
+		assert.Contains(t, output, "Status: 200 OK")
+		assert.Contains(t, output, "Content-Type: application/json")
+
+		// Parse JSON body (after CGI headers separated by \r\n\r\n)
+		bodyIdx := strings.Index(output, "\r\n\r\n")
+		require.Greater(t, bodyIdx, 0, "CGI output should contain header/body separator")
+		body := output[bodyIdx+4:]
+
+		assertValidOpenAPISpec(t, []byte(body))
+	})
+
 	// Case 3: Serve Mode (HTTP)
 	t.Run("Serve", func(t *testing.T) {
 		// Run server in background
 		cmd := exec.Command(binPath, "serve", "--port", "9999")
-		// Use a free port, 9999 for test
 		var stdout, stderr bytes.Buffer
 		cmd.Stdout = &stdout
 		cmd.Stderr = &stderr
@@ -132,62 +155,34 @@ func TestKuniumiIntegration(t *testing.T) {
 		}()
 
 		// Wait for server to start
-		time.Sleep(1 * time.Second) // Simple wait
+		time.Sleep(1 * time.Second)
 
-		// Make Request
-		// POST /functions/Add
-		reqBody := []byte(`{"x": 5, "y": 5}`)
-		resp, err := httpPost("http://localhost:9999/functions/Add", "application/json", bytes.NewReader(reqBody))
-		require.NoError(t, err)
-		defer resp.Body.Close()
+		t.Run("FunctionCall", func(t *testing.T) {
+			// POST /functions/Add
+			reqBody := []byte(`{"x": 5, "y": 5}`)
+			resp, err := httpPost("http://localhost:9999/functions/Add", "application/json", bytes.NewReader(reqBody))
+			require.NoError(t, err)
+			defer resp.Body.Close()
 
-		assert.Equal(t, 200, resp.StatusCode)
+			assert.Equal(t, 200, resp.StatusCode)
 
-		var result map[string]interface{}
-		json.NewDecoder(resp.Body).Decode(&result)
+			var result map[string]interface{}
+			json.NewDecoder(resp.Body).Decode(&result)
+			assert.Equal(t, float64(10), result["result"])
+		})
 
-		assert.Equal(t, float64(10), result["result"]) // JSON numbers are float64
+		t.Run("OpenAPI", func(t *testing.T) {
+			respSpec, err := httpGet("http://localhost:9999/openapi.json")
+			require.NoError(t, err)
+			defer respSpec.Body.Close()
 
-		// Test OpenAPI
-		respSpec, err := httpGet("http://localhost:9999/openapi.json")
-		require.NoError(t, err)
-		defer respSpec.Body.Close()
-		assert.Equal(t, 200, respSpec.StatusCode)
+			assert.Equal(t, 200, respSpec.StatusCode)
 
-		var spec map[string]interface{}
-		json.NewDecoder(respSpec.Body).Decode(&spec)
+			body, err := io.ReadAll(respSpec.Body)
+			require.NoError(t, err)
 
-		// Navigate to /functions/Add schema
-		paths := spec["paths"].(map[string]interface{})
-		pathAdd := paths["/functions/Add"].(map[string]interface{})
-		post := pathAdd["post"].(map[string]interface{})
-
-		// Check Return description
-		// "responses" -> "200" -> "description"? No, our implementation puts it in Schema?
-		// Actually, standard OpenAPI puts description in Response object.
-		// Our current adapter implementation hardcodes "Successful execution".
-		// Wait, implementation plan said: "Update adapter_http.go ... rely on GenerateJSONSchema".
-		// But in adapter_http.go we didn't use the return description for the response description field unless we modified it.
-		// Let's check adapter_http.go code again in my mind.
-		// Ah, I didn't verify if adapter_http.go sets response description dynamically.
-		// Looking at adapter_http.go content I viewed earlier:
-		// "200": map[string]any{"description": "Successful execution"},
-		// So return description is NOT used yet in HTTP adapter. I missed that in the plan execution.
-		// However, ARGUMENT descriptions ARE used in RequestBody Schema via GenerateJSONSchema.
-
-		reqBodySchema := post["requestBody"].(map[string]interface{})
-		content := reqBodySchema["content"].(map[string]interface{})
-		appJson := content["application/json"].(map[string]interface{})
-		schema := appJson["schema"].(map[string]interface{})
-		props := schema["properties"].(map[string]interface{})
-
-		// Check "x" description
-		propX := props["x"].(map[string]interface{})
-		assert.Equal(t, "First integer to add", propX["description"])
-
-		// Check "y" description
-		propY := props["y"].(map[string]interface{})
-		assert.Equal(t, "Second integer to add", propY["description"])
+			assertValidOpenAPISpec(t, body)
+		})
 	})
 
 	// Case 4: Virtual Environment & File Write
@@ -231,4 +226,71 @@ func httpPost(url, contentType string, body io.Reader) (*http.Response, error) {
 
 func httpGet(url string) (*http.Response, error) {
 	return http.Get(url)
+}
+
+// assertValidOpenAPISpec validates the structure and content of an OpenAPI spec JSON.
+func assertValidOpenAPISpec(t *testing.T, specJSON []byte) {
+	t.Helper()
+
+	var spec map[string]interface{}
+	err := json.Unmarshal(specJSON, &spec)
+	require.NoError(t, err, "OpenAPI spec should be valid JSON")
+
+	// Top-level fields
+	assert.Equal(t, "3.0.0", spec["openapi"], "openapi version should be 3.0.0")
+
+	info, ok := spec["info"].(map[string]interface{})
+	require.True(t, ok, "info should be an object")
+	assert.Equal(t, "Calculator", info["title"], "info.title should match app name")
+	assert.Equal(t, "1.0.0", info["version"], "info.version should match app version")
+
+	paths, ok := spec["paths"].(map[string]interface{})
+	require.True(t, ok, "paths should be an object")
+
+	// /functions/Add path
+	pathAdd, ok := paths["/functions/Add"].(map[string]interface{})
+	require.True(t, ok, "paths should contain /functions/Add")
+
+	post, ok := pathAdd["post"].(map[string]interface{})
+	require.True(t, ok, "/functions/Add should have post operation")
+
+	// post.description
+	assert.Equal(t, "Adds two integers together", post["description"],
+		"post.description should match function description")
+
+	// requestBody schema
+	reqBody, ok := post["requestBody"].(map[string]interface{})
+	require.True(t, ok, "post should have requestBody")
+
+	content, ok := reqBody["content"].(map[string]interface{})
+	require.True(t, ok, "requestBody should have content")
+
+	appJson, ok := content["application/json"].(map[string]interface{})
+	require.True(t, ok, "content should have application/json")
+
+	schema, ok := appJson["schema"].(map[string]interface{})
+	require.True(t, ok, "application/json should have schema")
+
+	props, ok := schema["properties"].(map[string]interface{})
+	require.True(t, ok, "schema should have properties")
+
+	// Check property "x"
+	propX, ok := props["x"].(map[string]interface{})
+	require.True(t, ok, "properties should contain 'x'")
+	assert.Equal(t, "First integer to add", propX["description"])
+	assert.Equal(t, "integer", propX["type"])
+
+	// Check property "y"
+	propY, ok := props["y"].(map[string]interface{})
+	require.True(t, ok, "properties should contain 'y'")
+	assert.Equal(t, "Second integer to add", propY["description"])
+	assert.Equal(t, "integer", propY["type"])
+
+	// Check responses
+	responses, ok := post["responses"].(map[string]interface{})
+	require.True(t, ok, "post should have responses")
+
+	resp200, ok := responses["200"].(map[string]interface{})
+	require.True(t, ok, "responses should contain '200'")
+	assert.NotEmpty(t, resp200["description"], "200 response should have description")
 }
