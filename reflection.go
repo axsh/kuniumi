@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"strconv"
 )
 
 // FunctionMetadata holds information about a registered function.
@@ -104,6 +105,13 @@ func CallFunction(ctx context.Context, meta *FunctionMetadata, args map[string]i
 				default:
 					return nil, fmt.Errorf("cannot convert %v to %v", targetVal.Type(), targetType)
 				}
+			} else if targetVal.Kind() == reflect.String {
+				// String to numeric/bool conversion using strconv
+				converted, err := convertStringToType(targetVal.String(), targetType)
+				if err != nil {
+					return nil, fmt.Errorf("cannot convert string %q to %v: %w", targetVal.String(), targetType, err)
+				}
+				in = append(in, converted)
 			} else {
 				return nil, fmt.Errorf("cannot convert %v to %v", targetVal.Type(), targetType)
 			}
@@ -171,5 +179,42 @@ func typeToSchema(t reflect.Type) map[string]interface{} {
 		return map[string]interface{}{"type": "object"}
 	default:
 		return map[string]interface{}{"type": "string"} // Fallback
+	}
+}
+
+// convertStringToType converts a string value to the specified reflect.Type using strconv.
+// Supported target types: int*, uint*, float*, bool.
+func convertStringToType(s string, targetType reflect.Type) (reflect.Value, error) {
+	switch targetType.Kind() {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		n, err := strconv.ParseInt(s, 10, targetType.Bits())
+		if err != nil {
+			return reflect.Value{}, fmt.Errorf("parsing %q as integer: %w", s, err)
+		}
+		return reflect.ValueOf(n).Convert(targetType), nil
+
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		n, err := strconv.ParseUint(s, 10, targetType.Bits())
+		if err != nil {
+			return reflect.Value{}, fmt.Errorf("parsing %q as unsigned integer: %w", s, err)
+		}
+		return reflect.ValueOf(n).Convert(targetType), nil
+
+	case reflect.Float32, reflect.Float64:
+		n, err := strconv.ParseFloat(s, targetType.Bits())
+		if err != nil {
+			return reflect.Value{}, fmt.Errorf("parsing %q as float: %w", s, err)
+		}
+		return reflect.ValueOf(n).Convert(targetType), nil
+
+	case reflect.Bool:
+		b, err := strconv.ParseBool(s)
+		if err != nil {
+			return reflect.Value{}, fmt.Errorf("parsing %q as bool: %w", s, err)
+		}
+		return reflect.ValueOf(b), nil
+
+	default:
+		return reflect.Value{}, fmt.Errorf("unsupported conversion from string to %v", targetType)
 	}
 }

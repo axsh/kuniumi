@@ -116,7 +116,25 @@ func TestKuniumiIntegration(t *testing.T) {
 		assert.Contains(t, output, `{"result":30}`)
 	})
 
-	// Case 2b: CGI OpenAPI
+	// Case 2b: CGI Mode with string numeric values
+	t.Run("CGI/StringArgs", func(t *testing.T) {
+		input := `{"x": "10", "y": "20"}`
+		cmd := exec.Command(binPath, "cgi")
+		cmd.Env = append(os.Environ(), "PATH_INFO=/Add", "REQUEST_METHOD=POST")
+		cmd.Stdin = strings.NewReader(input)
+
+		var out bytes.Buffer
+		cmd.Stdout = &out
+		cmd.Stderr = os.Stderr
+
+		require.NoError(t, cmd.Run())
+
+		output := out.String()
+		assert.Contains(t, output, "Status: 200 OK")
+		assert.Contains(t, output, `{"result":30}`)
+	})
+
+	// Case 2c: CGI OpenAPI
 	t.Run("CGI/OpenAPI", func(t *testing.T) {
 		cmd := exec.Command(binPath, "cgi")
 		cmd.Env = append(os.Environ(), "PATH_INFO=/openapi.json", "REQUEST_METHOD=GET")
