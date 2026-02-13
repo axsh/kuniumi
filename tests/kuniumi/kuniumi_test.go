@@ -95,6 +95,7 @@ func TestKuniumiIntegration(t *testing.T) {
 		out, err := cmd.CombinedOutput()
 		require.NoError(t, err)
 		assert.Contains(t, string(out), "Calculator v1.0.0")
+		assert.Contains(t, string(out), "based on kuniumi")
 		assert.Contains(t, string(out), "Available Commands:")
 	})
 

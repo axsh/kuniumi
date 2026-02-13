@@ -85,7 +85,7 @@ func New(cfg Config, opts ...Option) *App {
 		config: cfg,
 		rootCmd: &cobra.Command{
 			Use:   strings.ToLower(cfg.Name),
-			Short: fmt.Sprintf("%s v%s", cfg.Name, cfg.Version),
+			Short: fmt.Sprintf("%s v%s (%s)", cfg.Name, cfg.Version, frameworkVersionString()),
 		},
 	}
 
