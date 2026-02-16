@@ -31,9 +31,20 @@ func (a *App) generateOpenAPISpec() map[string]any {
 					},
 				},
 				"responses": map[string]any{
-					"200": map[string]any{
-						"description": "Successful execution",
-					},
+					"200": func() map[string]any {
+						responseDef := map[string]any{
+							"description": "Successful execution",
+						}
+						outputSchema := GenerateOutputJSONSchema(fn.Meta)
+						if outputSchema != nil {
+							responseDef["content"] = map[string]any{
+								"application/json": map[string]any{
+									"schema": outputSchema,
+								},
+							}
+						}
+						return responseDef
+					}(),
 				},
 			},
 		}

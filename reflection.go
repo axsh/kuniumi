@@ -157,6 +157,40 @@ func GenerateJSONSchema(meta *FunctionMetadata) map[string]interface{} {
 	}
 }
 
+// GenerateOutputJSONSchema generates a JSON Schema for the function return values.
+// The schema matches the response format used by the HTTP adapter:
+//   - Single return: {"type": "object", "properties": {"result": <schema>}}
+//   - Multiple returns: {"type": "object", "properties": {"result0": <schema>, "result1": <schema>, ...}}
+//   - No returns (error only): nil
+func GenerateOutputJSONSchema(meta *FunctionMetadata) map[string]interface{} {
+	if len(meta.Returns) == 0 {
+		return nil
+	}
+
+	properties := make(map[string]interface{})
+
+	if len(meta.Returns) == 1 {
+		schema := typeToSchema(meta.Returns[0].Type)
+		if meta.Returns[0].Description != "" {
+			schema["description"] = meta.Returns[0].Description
+		}
+		properties["result"] = schema
+	} else {
+		for i, ret := range meta.Returns {
+			schema := typeToSchema(ret.Type)
+			if ret.Description != "" {
+				schema["description"] = ret.Description
+			}
+			properties[fmt.Sprintf("result%d", i)] = schema
+		}
+	}
+
+	return map[string]interface{}{
+		"type":       "object",
+		"properties": properties,
+	}
+}
+
 // typeToSchema converts a Go reflect.Type to a JSON Schema definition.
 func typeToSchema(t reflect.Type) map[string]interface{} {
 	switch t.Kind() {

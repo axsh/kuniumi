@@ -108,3 +108,71 @@ func TestCallFunction_StringArgs(t *testing.T) {
 		})
 	}
 }
+
+// Test helper functions for GenerateOutputJSONSchema
+func singleReturnFunc(ctx context.Context, x int) (string, error) { return "", nil }
+func multiReturnFunc(ctx context.Context) (int, string, error)    { return 0, "", nil }
+func noReturnFunc(ctx context.Context) error                      { return nil }
+
+func TestGenerateOutputJSONSchema(t *testing.T) {
+	t.Run("single return without description", func(t *testing.T) {
+		meta, err := AnalyzeFunction(singleReturnFunc, "singleReturn", "test")
+		require.NoError(t, err)
+
+		schema := GenerateOutputJSONSchema(meta)
+		require.NotNil(t, schema, "schema should not be nil for function with return value")
+
+		assert.Equal(t, "object", schema["type"])
+
+		props, ok := schema["properties"].(map[string]interface{})
+		require.True(t, ok, "schema should have properties")
+
+		resultProp, ok := props["result"].(map[string]interface{})
+		require.True(t, ok, "properties should contain 'result'")
+		assert.Equal(t, "string", resultProp["type"])
+		assert.Nil(t, resultProp["description"], "description should not be set")
+	})
+
+	t.Run("single return with description", func(t *testing.T) {
+		meta, err := AnalyzeFunction(singleReturnFunc, "singleReturn", "test")
+		require.NoError(t, err)
+		meta.Returns[0].Description = "test description"
+
+		schema := GenerateOutputJSONSchema(meta)
+		require.NotNil(t, schema)
+
+		props := schema["properties"].(map[string]interface{})
+		resultProp := props["result"].(map[string]interface{})
+		assert.Equal(t, "string", resultProp["type"])
+		assert.Equal(t, "test description", resultProp["description"])
+	})
+
+	t.Run("multiple returns", func(t *testing.T) {
+		meta, err := AnalyzeFunction(multiReturnFunc, "multiReturn", "test")
+		require.NoError(t, err)
+
+		schema := GenerateOutputJSONSchema(meta)
+		require.NotNil(t, schema)
+
+		assert.Equal(t, "object", schema["type"])
+
+		props, ok := schema["properties"].(map[string]interface{})
+		require.True(t, ok)
+
+		result0, ok := props["result0"].(map[string]interface{})
+		require.True(t, ok, "properties should contain 'result0'")
+		assert.Equal(t, "integer", result0["type"])
+
+		result1, ok := props["result1"].(map[string]interface{})
+		require.True(t, ok, "properties should contain 'result1'")
+		assert.Equal(t, "string", result1["type"])
+	})
+
+	t.Run("no return (error only)", func(t *testing.T) {
+		meta, err := AnalyzeFunction(noReturnFunc, "noReturn", "test")
+		require.NoError(t, err)
+
+		schema := GenerateOutputJSONSchema(meta)
+		assert.Nil(t, schema, "schema should be nil for error-only function")
+	})
+}

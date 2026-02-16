@@ -312,4 +312,26 @@ func assertValidOpenAPISpec(t *testing.T, specJSON []byte) {
 	resp200, ok := responses["200"].(map[string]interface{})
 	require.True(t, ok, "responses should contain '200'")
 	assert.NotEmpty(t, resp200["description"], "200 response should have description")
+
+	// Check response body schema
+	respContent, ok := resp200["content"].(map[string]interface{})
+	require.True(t, ok, "200 response should have content")
+
+	respAppJson, ok := respContent["application/json"].(map[string]interface{})
+	require.True(t, ok, "response content should have application/json")
+
+	respSchema, ok := respAppJson["schema"].(map[string]interface{})
+	require.True(t, ok, "response application/json should have schema")
+
+	assert.Equal(t, "object", respSchema["type"], "response schema type should be object")
+
+	respProps, ok := respSchema["properties"].(map[string]interface{})
+	require.True(t, ok, "response schema should have properties")
+
+	resultProp, ok := respProps["result"].(map[string]interface{})
+	require.True(t, ok, "response properties should contain 'result'")
+	assert.Equal(t, "integer", resultProp["type"],
+		"result type should be integer for Add function")
+	assert.Equal(t, "Sum of x and y", resultProp["description"],
+		"result description should match WithReturns value")
 }
