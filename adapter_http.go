@@ -38,41 +38,27 @@ func (a *App) buildServeCmd() *cobra.Command {
 
 func (a *App) createHttpHandler(fn *RegisteredFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// Create Context with Virtual Environment
 		ctx := a.ContextWithEnv(r.Context())
 
-		// Decode Body
 		var args map[string]any
 		if err := json.NewDecoder(r.Body).Decode(&args); err != nil {
-			http.Error(w, "Invalid JSON body", http.StatusBadRequest)
+			writeJSONError(w, "Invalid JSON body", http.StatusBadRequest)
 			return
 		}
 
-		// Call Function
 		if fn.Meta == nil {
-			http.Error(w, "Function metadata missing", http.StatusInternalServerError)
+			writeJSONError(w, "Function metadata missing", http.StatusInternalServerError)
 			return
 		}
 
 		results, err := CallFunction(ctx, fn.Meta, args)
 		if err != nil {
-			http.Error(w, fmt.Sprintf("Function error: %v", err), http.StatusInternalServerError)
+			writeJSONError(w, fmt.Sprintf("Function error: %v", err), http.StatusInternalServerError)
 			return
 		}
 
-		// Encode Response
 		w.Header().Set("Content-Type", "application/json")
-
-		response := make(map[string]any)
-		if len(results) == 1 {
-			response["result"] = results[0]
-		} else {
-			for i, res := range results {
-				response[fmt.Sprintf("result%d", i)] = res
-			}
-		}
-
-		json.NewEncoder(w).Encode(response)
+		json.NewEncoder(w).Encode(buildSuccessResponse(results))
 	}
 }
 

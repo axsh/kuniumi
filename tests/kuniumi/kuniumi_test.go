@@ -119,6 +119,34 @@ func TestKuniumiIntegration(t *testing.T) {
 		assert.Contains(t, output, `{"result":30}`)
 	})
 
+	// Case 2a-err: CGI Error Response (JSON format)
+	t.Run("CGI/ErrorResponse", func(t *testing.T) {
+		input := `{"x": 10, "y": 20}`
+		cmd := exec.Command(binPath, "cgi")
+		cmd.Env = append(os.Environ(), "PATH_INFO=/NonExistent", "REQUEST_METHOD=POST")
+		cmd.Stdin = strings.NewReader(input)
+
+		var out bytes.Buffer
+		cmd.Stdout = &out
+		cmd.Stderr = os.Stderr
+
+		require.NoError(t, cmd.Run())
+
+		output := out.String()
+		assert.Contains(t, output, "Status: 404 Not Found")
+		assert.Contains(t, output, "Content-Type: application/json")
+
+		bodyIdx := strings.Index(output, "\r\n\r\n")
+		require.Greater(t, bodyIdx, 0, "CGI output should contain header/body separator")
+		body := output[bodyIdx+4:]
+
+		var parsed map[string]any
+		err := json.Unmarshal([]byte(body), &parsed)
+		require.NoError(t, err, "CGI error body should be valid JSON")
+		assert.Contains(t, parsed["error"], "NonExistent",
+			"error should mention the missing function name")
+	})
+
 	// Case 2b: CGI Mode with string numeric values
 	t.Run("CGI/StringArgs", func(t *testing.T) {
 		input := `{"x": "10", "y": "20"}`
@@ -190,6 +218,20 @@ func TestKuniumiIntegration(t *testing.T) {
 			var result map[string]interface{}
 			json.NewDecoder(resp.Body).Decode(&result)
 			assert.Equal(t, float64(10), result["result"])
+		})
+
+		t.Run("ErrorResponse", func(t *testing.T) {
+			resp, err := httpPost("http://localhost:9999/functions/Add",
+				"application/json", strings.NewReader("not json"))
+			require.NoError(t, err)
+			defer resp.Body.Close()
+
+			assert.Equal(t, 400, resp.StatusCode)
+			assert.Contains(t, resp.Header.Get("Content-Type"), "application/json")
+
+			var parsed map[string]any
+			json.NewDecoder(resp.Body).Decode(&parsed)
+			assert.Equal(t, "Invalid JSON body", parsed["error"])
 		})
 
 		t.Run("OpenAPI", func(t *testing.T) {
@@ -297,7 +339,33 @@ func TestKuniumiIntegration(t *testing.T) {
 
 			textContent, ok := result.Content[0].(*mcp.TextContent)
 			require.True(t, ok, "content should be TextContent")
-			assert.Equal(t, "10", textContent.Text, "Add(7, 3) should return 10")
+
+			var parsed map[string]any
+			err = json.Unmarshal([]byte(textContent.Text), &parsed)
+			require.NoError(t, err, "MCP response text should be valid JSON")
+			assert.Equal(t, float64(10), parsed["result"],
+				"Add(7, 3) should return {\"result\": 10}")
+		})
+
+		t.Run("CallToolError", func(t *testing.T) {
+			result, err := session.CallTool(ctx, &mcp.CallToolParams{
+				Name: "functions.Add",
+				Arguments: map[string]any{
+					"x": "not_a_number",
+					"y": 3,
+				},
+			})
+			require.NoError(t, err)
+			require.True(t, result.IsError, "tool call should return an error")
+			require.Greater(t, len(result.Content), 0, "error result should have content")
+
+			textContent, ok := result.Content[0].(*mcp.TextContent)
+			require.True(t, ok, "content should be TextContent")
+
+			var parsed map[string]any
+			err = json.Unmarshal([]byte(textContent.Text), &parsed)
+			require.NoError(t, err, "MCP error text should be valid JSON")
+			assert.NotEmpty(t, parsed["error"], "error response should contain 'error' field")
 		})
 	})
 }
@@ -403,4 +471,26 @@ func assertValidOpenAPISpec(t *testing.T, specJSON []byte) {
 		"result type should be integer for Add function")
 	assert.Equal(t, "Sum of x and y", resultProp["description"],
 		"result description should match WithReturns value")
+
+	// Check 400 error response
+	resp400, ok := responses["400"].(map[string]interface{})
+	require.True(t, ok, "responses should contain '400'")
+	assert.Equal(t, "Invalid request", resp400["description"])
+
+	resp400Content, ok := resp400["content"].(map[string]interface{})
+	require.True(t, ok, "400 response should have content")
+	resp400AppJson, ok := resp400Content["application/json"].(map[string]interface{})
+	require.True(t, ok, "400 content should have application/json")
+	resp400Schema, ok := resp400AppJson["schema"].(map[string]interface{})
+	require.True(t, ok, "400 application/json should have schema")
+	assert.Equal(t, "object", resp400Schema["type"])
+	resp400Props, ok := resp400Schema["properties"].(map[string]interface{})
+	require.True(t, ok, "400 schema should have properties")
+	_, ok = resp400Props["error"]
+	assert.True(t, ok, "400 schema properties should contain 'error'")
+
+	// Check 500 error response
+	resp500, ok := responses["500"].(map[string]interface{})
+	require.True(t, ok, "responses should contain '500'")
+	assert.Equal(t, "Internal server error", resp500["description"])
 }

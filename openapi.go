@@ -31,22 +31,38 @@ func (a *App) generateOpenAPISpec() map[string]any {
 						},
 					},
 				},
-				"responses": map[string]any{
-					"200": func() map[string]any {
-						responseDef := map[string]any{
-							"description": "Successful execution",
+			"responses": map[string]any{
+				"200": func() map[string]any {
+					responseDef := map[string]any{
+						"description": "Successful execution",
+					}
+					outputSchema := GenerateOutputJSONSchema(fn.Meta)
+					if outputSchema != nil {
+						responseDef["content"] = map[string]any{
+							"application/json": map[string]any{
+								"schema": outputSchema,
+							},
 						}
-						outputSchema := GenerateOutputJSONSchema(fn.Meta)
-						if outputSchema != nil {
-							responseDef["content"] = map[string]any{
-								"application/json": map[string]any{
-									"schema": outputSchema,
-								},
-							}
-						}
-						return responseDef
-					}(),
+					}
+					return responseDef
+				}(),
+				"400": map[string]any{
+					"description": "Invalid request",
+					"content": map[string]any{
+						"application/json": map[string]any{
+							"schema": errorResponseSchema(),
+						},
+					},
 				},
+				"500": map[string]any{
+					"description": "Internal server error",
+					"content": map[string]any{
+						"application/json": map[string]any{
+							"schema": errorResponseSchema(),
+						},
+					},
+				},
+			},
 			},
 		}
 	}

@@ -38,14 +38,15 @@ func (a *App) buildMcpCmd() *cobra.Command {
 
 					// Handle nil or empty arguments
 					if len(params.Arguments) > 0 {
-						if err := json.Unmarshal(params.Arguments, &toolArgs); err != nil {
-							return &mcp.CallToolResult{
-								IsError: true,
-								Content: []mcp.Content{
-									&mcp.TextContent{Text: fmt.Sprintf("Invalid arguments format: %v", err)},
-								},
-							}, nil
-						}
+				if err := json.Unmarshal(params.Arguments, &toolArgs); err != nil {
+						errJSON, _ := json.Marshal(buildErrorResponse(fmt.Sprintf("Invalid arguments format: %v", err)))
+						return &mcp.CallToolResult{
+							IsError: true,
+							Content: []mcp.Content{
+								&mcp.TextContent{Text: string(errJSON)},
+							},
+						}, nil
+					}
 					} else {
 						toolArgs = make(map[string]interface{})
 					}
@@ -53,28 +54,32 @@ func (a *App) buildMcpCmd() *cobra.Command {
 					// Create context with env
 					appCtx := a.ContextWithEnv(ctx)
 
-					results, err := CallFunction(appCtx, targetFn.Meta, toolArgs)
-					if err != nil {
-						return &mcp.CallToolResult{
-							IsError: true,
-							Content: []mcp.Content{
-								&mcp.TextContent{Text: fmt.Sprintf("Error: %v", err)},
-							},
-						}, nil
-					}
-
-					var content string
-					if len(results) == 1 {
-						content = fmt.Sprintf("%v", results[0])
-					} else {
-						content = fmt.Sprintf("%v", results)
-					}
-
+				results, err := CallFunction(appCtx, targetFn.Meta, toolArgs)
+				if err != nil {
+					errJSON, _ := json.Marshal(buildErrorResponse(err.Error()))
 					return &mcp.CallToolResult{
+						IsError: true,
 						Content: []mcp.Content{
-							&mcp.TextContent{Text: content},
+							&mcp.TextContent{Text: string(errJSON)},
 						},
 					}, nil
+				}
+
+				response := buildSuccessResponse(results)
+				jsonBytes, marshalErr := json.Marshal(response)
+				if marshalErr != nil {
+					return &mcp.CallToolResult{
+						IsError: true,
+						Content: []mcp.Content{
+							&mcp.TextContent{Text: `{"error":"failed to marshal response"}`},
+						},
+					}, nil
+				}
+				return &mcp.CallToolResult{
+					Content: []mcp.Content{
+						&mcp.TextContent{Text: string(jsonBytes)},
+					},
+				}, nil
 				})
 			}
 

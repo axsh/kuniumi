@@ -42,10 +42,12 @@ func (a *App) buildCgiCmd() *cobra.Command {
 				}
 			}
 
-			if targetFn == nil {
-				fmt.Printf("Status: 404 Not Found\r\n\r\nFunction not found: %s", fnName)
-				return nil
-			}
+		if targetFn == nil {
+			fmt.Printf("Content-Type: application/json\r\nStatus: 404 Not Found\r\n\r\n")
+			json.NewEncoder(os.Stdout).Encode(buildErrorResponse(
+				fmt.Sprintf("Function not found: %s", fnName)))
+			return nil
+		}
 
 			// 2. Read Body
 			// If POST, read Stdin.
@@ -53,35 +55,27 @@ func (a *App) buildCgiCmd() *cobra.Command {
 			var inputArgs map[string]interface{}
 
 			// Basic check for content length if needed, but JSON decoder is enough
-			if err := json.NewDecoder(os.Stdin).Decode(&inputArgs); err != nil && err != io.EOF {
-				// Allow empty body if EOF
-				fmt.Printf("Status: 400 Bad Request\r\n\r\nInvalid JSON: %v", err)
-				return nil
-			}
+		if err := json.NewDecoder(os.Stdin).Decode(&inputArgs); err != nil && err != io.EOF {
+			fmt.Printf("Content-Type: application/json\r\nStatus: 400 Bad Request\r\n\r\n")
+			json.NewEncoder(os.Stdout).Encode(buildErrorResponse(
+				fmt.Sprintf("Invalid JSON: %v", err)))
+			return nil
+		}
 
 			// 3. Setup Context
 			ctx := a.ContextWithEnv(context.Background())
 
 			// 4. Call Function
-			results, err := CallFunction(ctx, targetFn.Meta, inputArgs)
-			if err != nil {
-				fmt.Printf("Status: 500 Internal Server Error\r\n\r\nError: %v", err)
-				return nil
-			}
+		results, err := CallFunction(ctx, targetFn.Meta, inputArgs)
+		if err != nil {
+			fmt.Printf("Content-Type: application/json\r\nStatus: 500 Internal Server Error\r\n\r\n")
+			json.NewEncoder(os.Stdout).Encode(buildErrorResponse(
+				fmt.Sprintf("Error: %v", err)))
+			return nil
+		}
 
-			// 5. Response
-			fmt.Printf("Content-Type: application/json\r\nStatus: 200 OK\r\n\r\n")
-
-			response := make(map[string]interface{})
-			if len(results) == 1 {
-				response["result"] = results[0]
-			} else {
-				for i, res := range results {
-					response[fmt.Sprintf("result%d", i)] = res
-				}
-			}
-
-			json.NewEncoder(os.Stdout).Encode(response)
+		fmt.Printf("Content-Type: application/json\r\nStatus: 200 OK\r\n\r\n")
+		json.NewEncoder(os.Stdout).Encode(buildSuccessResponse(results))
 			return nil
 		},
 	}
