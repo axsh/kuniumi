@@ -1,0 +1,66 @@
+---
+description: Kuniumi project conventions, directory structure, development process, and environment requirements
+alwaysApply: true
+---
+
+# Kuniumi Project Instructions
+
+## Project Overview
+
+**Kuniumi** is a Go framework that exposes Go functions as portable web services through multiple interfaces (HTTP, CGI, MCP, Docker containers).
+
+- Language: Go
+- Architecture: Modular/Layered
+
+## Directory Structure
+
+- **Specs & Design**: `prompts/phases/` is the source of truth.
+  - `000-firstrelease/` — phase name
+    - `ideas/` — idea notes and specifications
+      - `main/` — branch name (use the current working branch name)
+        - `000-xxx.md`, `001-yyy.md` — numbered spec files
+
+## Development Process
+
+**Spec-first**: Before implementing, create/update a specification under `prompts/phases/.../ideas/[branch-name]/`. Spec file names use a 3-digit sequential prefix starting from `000-`.
+
+### Workflow Order
+
+The development workflow uses skills defined in `.cursor/skills/`:
+
+```
+[Human: Idea]
+       ↓
+[AI: create-specification] → Generate spec
+       ↓
+[Human: Review / Revise / Approve]
+       ↓
+[AI: create-implementation-plan] → Generate plan
+       ↓
+[Human: Review / Revise / Approve]
+       ↓
+[AI: execute-implementation-plan]
+       ├→ Coding
+       ├→ Testing
+       └→ [AI: build-pipeline]
+              ├→ scripts/process/build.sh
+              └→ scripts/process/integration_test.sh
+```
+
+**Key rules**:
+- Human review points: after specification and after implementation plan.
+- NEVER auto-advance to the next phase without explicit user instruction.
+- Progress tracking: use checkboxes in implementation plans (`[ ]` → `[/]` → `[x]`).
+
+## Shell Environment
+
+Always use **bash** for script execution.
+
+- **Windows**: Use Git Bash (not PowerShell). Project scripts under `scripts/` are bash scripts.
+- **Mac/Linux**: Use the standard bash shell.
+
+## File Management
+
+- **Intermediate files** (build error logs, debug output, temp docs, PID files) must be placed under `tmp/`.
+  - Example: `tmp/build_error.txt`, `tmp/doc_delta.txt`, `tmp/vscode_launch.log`
+  - `tmp/` is in `.gitignore` and will not be committed.
