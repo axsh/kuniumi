@@ -23,7 +23,7 @@ func (a *App) buildMcpCmd() *cobra.Command {
 			// Register Tools
 			for _, fn := range a.functions {
 				tool := mcp.Tool{
-					Name:        fn.Name,
+					Name:        fn.OperationID(),
 					Description: fn.Description,
 					InputSchema: GenerateJSONSchema(fn.Meta),
 				}

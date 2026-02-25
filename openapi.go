@@ -22,6 +22,7 @@ func (a *App) generateOpenAPISpec() map[string]any {
 
 		paths[path] = map[string]any{
 			"post": map[string]any{
+				"operationId": fn.OperationID(),
 				"description": fn.Description,
 				"requestBody": map[string]any{
 					"content": map[string]any{

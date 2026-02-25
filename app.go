@@ -35,6 +35,13 @@ type RegisteredFunc struct {
 	returnDesc  string
 }
 
+// OperationID returns the canonical identifier for this function,
+// used as both the OpenAPI operationId and MCP tool name.
+// Format: "functions.{Name}" (e.g., "functions.Add").
+func (rf *RegisteredFunc) OperationID() string {
+	return "functions." + rf.Name
+}
+
 // ArgNamesOption allows specifying argument names for a function.
 // This is useful when reflection cannot deduce meaningful parameter names.
 type ArgNamesOption struct {

@@ -4,6 +4,7 @@ package kuniumi_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -15,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -235,6 +237,69 @@ func TestKuniumiIntegration(t *testing.T) {
 			assert.Contains(t, string(content), "Adding 1 + 1")
 		}
 	})
+
+	// Case 5: MCP Mode (Model Context Protocol over stdio)
+	t.Run("MCP", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		client := mcp.NewClient(&mcp.Implementation{
+			Name:    "test-client",
+			Version: "1.0.0",
+		}, nil)
+
+		transport := &mcp.CommandTransport{
+			Command: exec.Command(binPath, "mcp"),
+		}
+		session, err := client.Connect(ctx, transport, nil)
+		require.NoError(t, err)
+		defer session.Close()
+
+		t.Run("ListTools", func(t *testing.T) {
+			result, err := session.ListTools(ctx, nil)
+			require.NoError(t, err)
+			require.NotNil(t, result)
+
+			var toolNames []string
+			for _, tool := range result.Tools {
+				toolNames = append(toolNames, tool.Name)
+			}
+			assert.Contains(t, toolNames, "functions.Add",
+				"tool name should follow OpenAPI path convention (dots instead of slashes)")
+		})
+
+		t.Run("ToolSchema", func(t *testing.T) {
+			result, err := session.ListTools(ctx, nil)
+			require.NoError(t, err)
+
+			var addTool *mcp.Tool
+			for _, tool := range result.Tools {
+				if tool.Name == "functions.Add" {
+					addTool = tool
+					break
+				}
+			}
+			require.NotNil(t, addTool, "should find functions.Add tool")
+			assert.Equal(t, "Adds two integers together", addTool.Description)
+		})
+
+		t.Run("CallTool", func(t *testing.T) {
+			result, err := session.CallTool(ctx, &mcp.CallToolParams{
+				Name: "functions.Add",
+				Arguments: map[string]any{
+					"x": 7,
+					"y": 3,
+				},
+			})
+			require.NoError(t, err)
+			require.False(t, result.IsError, "tool call should not return an error")
+			require.Greater(t, len(result.Content), 0, "result should have content")
+
+			textContent, ok := result.Content[0].(*mcp.TextContent)
+			require.True(t, ok, "content should be TextContent")
+			assert.Equal(t, "10", textContent.Text, "Add(7, 3) should return 10")
+		})
+	})
 }
 
 // Helpers
@@ -276,6 +341,10 @@ func assertValidOpenAPISpec(t *testing.T, specJSON []byte) {
 	// post.description
 	assert.Equal(t, "Adds two integers together", post["description"],
 		"post.description should match function description")
+
+	// operationId must match MCP tool name
+	assert.Equal(t, "functions.Add", post["operationId"],
+		"operationId should match MCP tool name")
 
 	// requestBody schema
 	reqBody, ok := post["requestBody"].(map[string]interface{})
